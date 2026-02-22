@@ -1,1 +1,157 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Artie ✨ My Drawing Vault</title>
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;600;700&family=Caveat:wght@700&display=swap" rel="stylesheet">
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-storage-compat.js"></script>
+
+  <style>
+    body { font-family: 'Quicksand', sans-serif; background: #fff5f7; }
+    .glass { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(12px); }
+    .pink-gradient { background: linear-gradient(135deg, #fce7f3 0%, #fae8ff 100%); }
+    
+    /* Fade-in Animation for the Gallery Cards */
+    @keyframes popIn {
+      0% { opacity: 0; transform: scale(0.9) translateY(20px); }
+      100% { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    .art-card { animation: popIn 0.6s ease forwards; }
+
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-thumb { background: #fbcfe8; border-radius: 10px; }
+  </style>
+</head>
+<body class="pink-gradient min-h-screen pb-24 overflow-x-hidden">
+
+  <div id="intro-screen" class="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-white transition-opacity duration-1000">
+    <div class="relative">
+      <div class="absolute inset-0 bg-pink-200 rounded-full blur-2xl opacity-60 animate-ping"></div>
+      <div class="text-8xl relative animate-bounce">🎨</div>
+    </div>
+    <h1 style="font-family: 'Caveat', cursive;" class="mt-8 text-5xl text-pink-400">Artie ✨</h1>
+    <p class="mt-2 text-pink-300 tracking-widest text-sm animate-pulse">CREATING MAGIC...</p>
+  </div>
+
+  <header class="sticky top-0 z-50 glass border-b border-pink-100 p-4 flex justify-between items-center px-6">
+    <h1 style="font-family: 'Caveat', cursive;" class="text-3xl font-bold text-pink-500">Artie</h1>
+    <div class="flex items-center gap-3">
+      <span class="text-xs font-bold text-pink-400 bg-pink-50 px-2 py-1 rounded-full border border-pink-200">PRO</span>
+      <div class="w-10 h-10 rounded-full border-2 border-pink-300 overflow-hidden shadow-inner">
+        <img src="https://api.dicebear.com/7.x/adventurer/svg?seed=Daisy" alt="avatar">
+      </div>
+    </div>
+  </header>
+
+  <main id="gallery" class="p-4 grid grid-cols-1 gap-6 max-w-md mx-auto">
+    <div id="loading-state" class="text-center py-20 text-pink-300 italic">
+      Fetching your masterpieces... 🌸
+    </div>
+  </main>
+
+  <nav class="fixed bottom-6 left-1/2 -translate-x-1/2 w-[85%] max-w-sm glass rounded-full shadow-2xl border border-white p-3 flex justify-around items-center">
+    <button class="text-2xl hover:scale-110 transition">🏠</button>
+    
+    <button onclick="document.getElementById('fileInput').click()" 
+      class="bg-pink-400 hover:bg-pink-500 text-white w-14 h-14 rounded-full flex items-center justify-center text-3xl shadow-lg shadow-pink-200 transition-all active:scale-75">
+      +
+    </button>
+    
+    <button class="text-2xl hover:scale-110 transition">💖</button>
+    
+    <input type="file" id="fileInput" class="hidden" accept="image/*">
+  </nav>
+
+  <script>
+    // --- FIREBASE CONFIGURATION ---
+    // Replace these values with your own from Firebase Console!
+    const firebaseConfig = {
+      apiKey: "PASTE_YOUR_API_KEY_HERE",
+      authDomain: "your-app.firebaseapp.com",
+      projectId: "your-app-id",
+      storageBucket: "your-app-id.appspot.com",
+      messagingSenderId: "123456789",
+      appId: "1:12345:web:abcd"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    const storage = firebase.storage();
+
+    // --- INTRO SCREEN DISMISSAL ---
+    window.addEventListener('load', () => {
+      setTimeout(() => {
+        const intro = document.getElementById('intro-screen');
+        intro.style.opacity = '0';
+        setTimeout(() => intro.style.display = 'none', 1000);
+        loadPosts(); // Load images once intro is done
+      }, 2500);
+    });
+
+    // --- UPLOAD DRAWING LOGIC ---
+    const fileInput = document.getElementById('fileInput');
+    fileInput.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      alert("✨ Uploading your art to the stars...");
+
+      try {
+        // 1. Upload Image to Firebase Storage
+        const storageRef = storage.ref('drawings/' + Date.now() + "_" + file.name);
+        const snapshot = await storageRef.put(file);
+        const url = await snapshot.ref.getDownloadURL();
+
+        // 2. Save Link to Firestore Database
+        await db.collection("posts").add({
+          imageUrl: url,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+          likes: 0
+        });
+
+        alert("Posted! 🎨💖");
+        loadPosts(); // Refresh gallery
+      } catch (err) {
+        console.error(err);
+        alert("Oh no! Something went wrong. Check your Firebase config!");
+      }
+    });
+
+    // --- LOAD DRAWINGS FROM DATABASE ---
+    async function loadPosts() {
+      const gallery = document.getElementById('gallery');
+      const snapshot = await db.collection("posts").orderBy("timestamp", "desc").get();
+      
+      gallery.innerHTML = ''; // Clear loading state
+
+      if (snapshot.empty) {
+        gallery.innerHTML = `<p class="text-center text-pink-400 py-10">No drawings yet... be the first! ✨</p>`;
+        return;
+      }
+
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        const card = `
+          <div class="art-card bg-white rounded-[2rem] p-3 shadow-xl shadow-pink-100/50 border border-white">
+            <img src="${data.imageUrl}" class="rounded-[1.5rem] w-full h-72 object-cover mb-3 shadow-inner">
+            <div class="flex justify-between items-center px-3 pb-2">
+              <span class="text-gray-500 text-xs font-semibold uppercase tracking-widest">Masterpiece</span>
+              <button onclick="this.innerHTML='💖'; alert('Saved to favorites!')" class="bg-pink-50 text-pink-400 p-2 px-4 rounded-full text-sm font-bold transition-all hover:bg-pink-100">
+                ♡ Save
+              </button>
+            </div>
+          </div>
+        `;
+        gallery.innerHTML += card;
+      });
+    }
+  </script>
+</body>
+</html>
